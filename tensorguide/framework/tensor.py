@@ -6,36 +6,9 @@ import math
 from typing import Callable, Iterable
 from uuid import uuid4 as uid
 
-import tensorguide.ops as ops
 import numpy as np
+import tensorguide.ops as ops
 from tensorguide.framework.graph import Graph
-
-
-def tensor_op(class_function):
-    def op_wrapper(self, *args, **kwargs):
-        tensor_kwargs = class_function(self, *args, **kwargs)
-        # need to allow op functions to do things like `return self` for
-        # efficiency. Hence an operation can return a tensor object directly.
-        if isinstance(tensor_kwargs, Tensor):
-            return tensor_kwargs
-        tensor_kwargs.setdefault("name", class_function.__name__)
-        tensor_kwargs["name"] = f"{self.name} -> {tensor_kwargs['name']}"
-        child = self.__class__(**tensor_kwargs)
-        self._children.append(child)
-        return child
-
-    return op_wrapper
-
-
-def two_tensor_op(class_function):
-    def op_wrapper(self, tensor, **kwargs):
-        self, tensor = _op_check_and_transform(self, tensor)
-        wrapped_op = tensor_op(class_function)
-        new_tensor = wrapped_op(self, tensor, **kwargs)
-        tensor._children.append(new_tensor)
-        return new_tensor
-
-    return op_wrapper
 
 
 def _flatten(iterable: Iterable) -> Iterable:
@@ -203,87 +176,18 @@ class Tensor:
             out = self._offset + sum([s_idx * self._stride[i] for i, s_idx in enumerate(cell_idx)])
             yield self._storage[out]
 
-    @tensor_op
-    def permute(self, *axes):
-        return dict(
-            dtype=self.dtype,
-            shape=[self.shape[ax] for ax in axes],
-            stride=[self._stride[ax] for ax in axes],
-            offset=self._offset,
-            value=self._storage,
-        )
-
     def transpose(self):
         axes = list(range(self.rank - 1, -1, -1))
-        return self.permute(*axes)
+        return ops.permute(self, axes=axes)
 
     def swapaxes(self, ax1, ax2):
         axes = list(range(self.rank))
         axes[ax2] = ax1
         axes[ax1] = ax2
-        return self.permute(*axes)
+        return ops.permute(self, axes=axes)
 
-    @tensor_op
     def __getitem__(self, idx):
-        print("slicing")
-        if self.rank == 0:
-            raise ValueError("Cannot index into a Tensor with 0 Dimension (a Scalar)")
-        if not isinstance(idx, (int, tuple, slice, type(None))):
-            raise ValueError(f"{idx} is of type {type(idx)}, but must be of type int, tuple, slice, or None")
-        idx = idx if isinstance(idx, tuple) else (idx,)
-        shape = []
-        stride = []
-        offset = self._offset
-        axis = 0
-        contiguous = True
-        for axis_slice in idx:
-            if axis_slice is None:
-                shape.append(1)
-                # stride number shouldn't really matter here, but this is what pytorch does
-                if axis == 0:
-                    stride.append(len(self._storage))
-                else:
-                    stride.append(self._stride[axis - 1])
-                continue
-            if isinstance(axis_slice, int):
-                if axis_slice >= self.shape[axis]:
-                    raise IndexError(
-                        f"index {axis_slice} is out of bounds for axis {axis} with size {self.shape[axis]}"
-                    )
-                offset += axis_slice * self._stride[axis]
-            else:
-                start = 0 if axis_slice.start is None else axis_slice.start
-                if start < 0:
-                    start = 0 if -start > self.shape[axis] else self.shape[axis] + start
-                stop = self.shape[axis] if axis_slice.stop is None else axis_slice.stop
-                if stop < 0:
-                    stop = 0 if -stop > self.shape[axis] else self.shape[axis] + stop
-                else:
-                    stop = stop if stop < self.shape[axis] else self.shape[axis]
-                step = 1 if axis_slice.step is None else axis_slice.step
-                if step <= 0:
-                    raise ValueError("step must be greater than 0")
-                length = stop - start
-                if length < 0:
-                    raise ValueError("the stop of the slice must be greater than the start of the slice")
-                shape.append(-(length // -step))
-                stride.append(self._stride[axis] * step)
-                if step != 1:
-                    contiguous = False
-                offset += start * self._stride[axis]
-            axis += 1
-
-        shape = (*shape, *self.shape[axis:])
-        stride = (*stride, *self._stride[axis:])
-        return dict(
-            name=f"slice",
-            shape=shape,
-            offset=offset,
-            value=self._storage,
-            dtype=self.dtype,
-            stride=stride,
-            contiguous=contiguous,
-        )
+        return ops.slice(self, idx)
 
     @property
     def _data(self):

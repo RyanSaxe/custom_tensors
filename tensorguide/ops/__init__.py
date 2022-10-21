@@ -1,15 +1,6 @@
-from tensorguide.ops import mathops, shapeops
+from tensorguide.ops import array_ops, math_ops
 
-
-# all functional ops are registered in the general scope of ops
-# >>> import ops
-# >>> ops.add # this is a functional alias for ops.mathops.Add
-def register_op_as_function(name):
-    def op(cls):
-        def function(*tensors, **kwargs):
-            return cls._create_and_apply(*tensors, **kwargs)
-
-        globals()[name] = function
-        return cls
-
-    return op
+# the code below import loads every Operation wrapped in @register_op_as_function("name") such that
+# >>> from tensorguide.ops import name
+# will work for all operation modules specified in the first line of this file: from tensorguide.ops import . . .
+from tensorguide.ops.op_registry import *
