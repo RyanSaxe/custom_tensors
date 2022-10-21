@@ -6,7 +6,7 @@ from setuptools import find_packages, setup
 
 README_FILE = "README.md"
 VERSION_FILE = "tensorguide/_version.py"
-VERSION_REGEXP = r"^__version__ = \'(\d+\.\d+\.\d+)\'"
+VERSION_REGEXP = r"^__version__ = \"(\d+\.\d+\.\d+)\""
 
 r = re.search(VERSION_REGEXP, open(VERSION_FILE).read(), re.M)
 if r is None:
