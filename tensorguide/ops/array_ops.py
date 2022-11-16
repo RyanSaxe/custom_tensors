@@ -1,5 +1,7 @@
 from tensorguide.framework.ops import Operation, functionize_op
 
+__all__ = ["expand"]
+
 
 class ArrayOp(Operation):
     """Types of operations that never modify the data on a Tensor, and instead just modify things like the shape"""

@@ -2,6 +2,8 @@ import math
 
 from tensorguide.framework.ops import Operation, functionize_op
 
+__all__ = ["log"]
+
 
 class TransformOp(Operation):
     def __init__(self, tensor, **kwargs):

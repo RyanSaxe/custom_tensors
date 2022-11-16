@@ -2,6 +2,8 @@ import math
 
 from tensorguide.framework.ops import Operation, functionize_op
 
+__all__ = ["add", "multiply", "subtract", "power", "divide"]
+
 
 class MathOp(Operation):
     def transform_and_check_input_tensors(self):
