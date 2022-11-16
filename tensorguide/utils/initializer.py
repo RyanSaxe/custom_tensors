@@ -2,7 +2,6 @@ import array
 import math
 import random
 from functools import partial
-from typing import Callable
 
 
 class Initializer:

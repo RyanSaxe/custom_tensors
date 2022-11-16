@@ -1,75 +1,66 @@
-import array
-import math
-from functools import partial
-from uuid import uuid4 as uid
+import abc
+from functools import wraps
 
-from tensorguide.framework.graph import Graph
-from tensorguide.framework.tensor import Tensor, convert_to_tensor
+from joblib import Parallel, delayed
+
+
+def functionize_op(op_cls):
+    @wraps(op_cls)
+    def call_op(*args, **kwargs):
+        return op_cls(*args, **kwargs).__call__()
+
+    return call_op
 
 
 class Operation:
-    def __init__(self, *tensors, name=None, parallel=None):
-        assert len(tensors) in [1, 2], "currently only supporting operations on a 1 or 2 tensors"
-        self._inputs = self._compatibility_check_and_transform(*tensors)
-        self._graph = Graph._get_current_graph()
-        self.parallel = self._graph._njobs != 1 if parallel is None else parallel
-        self.name = self._graph._register_op(self, self.__class__.__name__ if name is None else name)
-        # NOTE: for simplicity currently requiring all Operations to only have a single output
-        self._output = None
-        self._id = uid()
+    def __init__(self, *inputs, njobs=1, stop_gradient=False):
+        from tensorguide.framework.tensor import convert_to_tensor
 
-        self._set_output_tensor_kwargs()
+        self.inputs = list(map(convert_to_tensor, inputs))
+        self.inputs = self.transform_and_check_input_tensors()
+        self.output_tensor_kwargs = self.get_output_tensor_kwargs()
+        if stop_gradient:
+            self.output_tensor_kwargs["require_grad"] = False
+        self.output = None
+        self.njobs = njobs
 
-    @property
-    def input(self):
-        if len(self._inputs) == 1:
-            return self._inputs[0]
-        else:
-            return self._inputs
+        self.name = self.__class__.__name__
 
-    @property
-    def output(self):
-        if self._output is None:
-            raise ValueError("Cannot access output of an Operation before calling the forward pass.")
-        return self._output
-
-    def _set_output_tensor_kwargs(self):
-        self._output_tensor_kwargs = dict(
-            name=f"{self._inputs[0].name} -> {self.name}",
-            shape=self._inputs[0].shape,
-            dtype=self._inputs[0].dtype,
+    def get_output_tensor_kwargs(self):
+        return dict(
             trainable=False,
-            require_grad=any(t.require_grad for t in self._inputs),
-            op=self,
-            graph=self._graph,
+            require_grad=any(tensor.require_grad for tensor in self.inputs),
+            dtype=self.inputs[0].dtype,
+            _op=self,
         )
 
-    @classmethod
-    def _compatibility_check_and_transform(cls, *tensors):
-        """check that this operation is valid across the tensors. Then expand + broadcast any of them if necessary"""
-        tensors = list(map(convert_to_tensor, tensors))
-        if len(set(t.dtype for t in tensors)) != 1:
+    def transform_and_check_input_tensors(self):
+        dtypes = set(t.dtype for t in self.inputs)
+        if len(dtypes) != 1:
             raise ValueError(
                 f"Operations require all Tensors to have the same dtype.\
-                Found dtypes: {set(t.dtype for t in tensors)}"
+                Found dtypes: {dtypes}"
             )
-        return tensors
+        return self.inputs
 
     def __call__(self):
-        self._output_tensor_kwargs["value"] = self._forward(*self._inputs)
-        self._output = Tensor(**self._output_tensor_kwargs)
-        return self._output
+        from tensorguide.framework.tensor import Tensor
 
-    def _forward(self, *tensors):
-        iterator = tensors[0]._flat_iterator() if len(tensors) == 1 else zip(*[t._flat_iterator() for t in tensors])
-        if self.parallel:
-            output = Parallel(n_jobs=self._graph.njobs)(delayed(self.forward)(item) for item in iterator)
-        else:
-            output = (self.forward(item) for item in iterator)
-        return array.array(self._output_tensor_kwargs["dtype"], output)
+        inputs = self.inputs_iterator()
+        self.output = Parallel(n_jobs=self.njobs)(delayed(self.forward)(item) for item in inputs)
+        if not isinstance(self.output, Tensor):
+            self.output_tensor_kwargs["value"] = self.output
+            self.output = Tensor(**self.output_tensor_kwargs)
+        return self.output
 
-    def forward(self, inputs):
-        raise NotImplementedError()
+    @abc.abstractmethod
+    def inputs_iterator(self):
+        ...
 
+    @abc.abstractmethod
+    def forward(self, *inputs):
+        ...
+
+    @abc.abstractmethod
     def backward(self):
-        raise NotImplementedError()
+        ...
