@@ -1,6 +1,7 @@
 import array
 import itertools
 import math
+from uuid import uuid4 as uid
 
 import numpy as np
 from tensorguide.ops import array_ops, math_ops, transform_ops
@@ -145,6 +146,7 @@ class Tensor:
 
         self._grad = 0.0
         self._children = []
+        self._id = str(uid())
 
     def __len__(self):
         return self.shape[0]

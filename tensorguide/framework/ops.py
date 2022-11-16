@@ -1,5 +1,6 @@
 import abc
 from functools import wraps
+from uuid import uuid4 as uid
 
 from joblib import Parallel, delayed
 
@@ -25,6 +26,7 @@ class Operation:
         self.njobs = njobs
 
         self.name = self.__class__.__name__
+        self._id = str(uid())
 
     def get_output_tensor_kwargs(self):
         return dict(
