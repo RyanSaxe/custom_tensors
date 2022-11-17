@@ -179,8 +179,8 @@ class Tensor:
     def __repr__(self):
         return self._data.__repr__().replace("array", self.__str__())
 
-    # def sum(self, axis=0):
-    #     return array_ops._sum(self, axis=axis)
+    def sum(self, axis=0):
+        return array_ops._sum(self, axis=axis)
 
     def __add__(self, tensor):
         if tensor in [0, 0.0]:
@@ -206,6 +206,14 @@ class Tensor:
         if tensor in [0, 0.0]:
             return self
         return math_ops.subtract(self, tensor)
+
+    def __matmul__(self, tensor):
+        return math_ops.matmul(self, tensor)
+
+    def __rmatmul__(self, tensor):
+        if not isinstance(tensor, Tensor):
+            tensor = convert_to_tensor(tensor)
+        return tensor @ self
 
     def __radd__(self, tensor):
         return self + tensor

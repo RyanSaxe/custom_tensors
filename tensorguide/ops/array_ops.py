@@ -1,10 +1,13 @@
 from tensorguide.framework.ops import Operation, functionize_op
+from tensorguide.ops import math_ops
 
 __all__ = ["expand"]
 
 
 class ArrayOp(Operation):
     """Types of operations that never modify the data on a Tensor, and instead just modify things like the shape"""
+
+    n_inputs = 1
 
     def __init__(self, tensor, **kwargs):
         super().__init__(tensor, njobs=1, **kwargs)
@@ -111,9 +114,13 @@ class broadcast(ArrayOp):
         super().__init__(tensor, **kwargs)
 
     def get_output_tensor_kwargs(self):
-        stride = [
-            0 if (self.tensor.shape[i] == 1) and (self.shape[i] != 1) else self.tensor._stride[i]
-            for i in range(self.tensor.rank)
+        n_expands = len(self.shape) - len(self.tensor.shape)
+        if n_expands < 0:
+            raise ValueError("cannot broadcast from a tensor of higher rank to a tensor of lower rank")
+        shape = (*([1] * n_expands), *self.tensor.shape)
+        stride = [0 if self.shape[i] != 1 else self.tensor._stride[0] for i in range(n_expands)] + [
+            0 if (shape[i] == 1) and (self.shape[i] != 1) else self.tensor._stride[i - n_expands]
+            for i in range(n_expands, self.tensor.rank + n_expands)
         ]
         if 0 not in stride:
             raise ValueError(f"Tensor object of shape {self.tensor.shape} does not need to be broadcasted to {shape}")
@@ -123,6 +130,13 @@ class broadcast(ArrayOp):
             _contiguous=False,
             shape=self.shape,
         )
+
+    def backward(self):
+        broadcasted_axes = [ax for ax in range(self.output.rank) if self.output._stride[ax] == 0]
+        grad = self.output.grad
+        for ax_to_aggregate in broadcasted_axes[::-1]:
+            grad = grad.sum(axis=ax_to_aggregate)
+        self.tensor.grad += grad.reshape(self.tensor.shape)
 
 
 @functionize_op
@@ -134,43 +148,45 @@ class expand(ArrayOp):
     def get_output_tensor_kwargs(self):
         dims = [self.tensor.rank + d + len(self.dims) if d < 0 else d for d in self.dims]
         shape = []
+        stride = []
+        waiting_on_stride = 0
         axis = 0
         for i in range(len(dims) + self.tensor.rank):
             if i in dims:
                 shape.append(1)
+                waiting_on_stride += 1
             else:
                 shape.append(self.tensor.shape[axis])
+                for _ in range(waiting_on_stride + 1):
+                    stride.append(self.tensor._stride[axis])
+                waiting_on_stride = 0
                 axis += 1
+        return super().get_output_tensor_kwargs() | dict(shape=shape, _stride=stride)
+
+
+@functionize_op
+class _sum(ArrayOp):
+    def __init__(self, tensor, axis=0, keepdims=False, **kwargs):
+        self.axis = axis
+        self.keepdims = keepdims
+        super().__init__(tensor, **kwargs)
+
+    def get_output_tensor_kwargs(self):
+        self.axis = self.axis if self.axis >= 0 else self.tensor.rank + self.axis
+        shape = [*self.tensor.shape[: self.axis], *self.tensor.shape[self.axis + 1 :]]
+        if self.keepdims:
+            shape.insert(axis, 1)
         return super().get_output_tensor_kwargs() | dict(shape=shape)
 
+    def inputs_iterator(self):
+        yield [
+            _slice(self.tensor, key=tuple([slice(None)] * self.axis + [idx]))
+            for idx in range(self.tensor.shape[self.axis])
+        ]
 
-# @functionize_op
-# class _sum(ArrayOp):
-#     def __init__(self, tensor, axis=0, keepdims=False, **kwargs):
-#         self.axis = axis
-#         self.keepdims = keepdims
-#         super().__init__(tensor, **kwargs)
+    def forward(self, inputs):
+        return math_ops.add(*inputs)
 
-#     def get_output_tensor_kwargs(self):
-#         self.axis = self.axis if self.axis >= 0 else self.input.rank + self.axis
-#         shape = [*self.input.shape[: self.axis], *self.input.shape[self.axis + 1 :]]
-#         if self.keepdims:
-#             shape.insert(axis, 1)
-#         return super().get_output_tensor_kwargs() | dict(shape=shape)
-
-#     def _forward(self, tensor):
-#         def iterator(t):
-#             for idx in range(tensor.shape[self.axis]):
-#                 key = tuple([slice(None)] * self.axis + [idx])
-#                 yield _slice(tensor, key=key)
-
-#         return self.forward(*list(iterator(tensor)))
-
-#     def forward(self, *inputs):
-#         return math_ops.add(*inputs)
-
-#     def backward(self):
-#         for tensor in self.input:
-#             if tensor.grad is None:
-#                 tensor.zero_grad()
-#             tensor.grad += self.output.grad
+    def backward(self):
+        # need to do axis expansion first
+        tensor.grad += self.output.grad.broadcast_to(self.tensor.shape)

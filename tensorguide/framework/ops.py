@@ -3,6 +3,7 @@ from functools import wraps
 from uuid import uuid4 as uid
 
 from joblib import Parallel, delayed
+from tensorguide.utils import numeric
 
 
 def functionize_op(op_cls):
@@ -14,6 +15,10 @@ def functionize_op(op_cls):
 
 
 class Operation:
+    min_n_inputs = 1
+    max_n_inputs = numeric.inf
+    n_inputs = None
+
     def __init__(self, *inputs, njobs=1, stop_gradient=False):
         from tensorguide.framework.tensor import convert_to_tensor
 
@@ -37,6 +42,16 @@ class Operation:
         )
 
     def transform_and_check_input_tensors(self):
+        n_inputs = len(self.inputs)
+        if self.n_inputs is not None:
+            if self.n_inputs != n_inputs:
+                raise ValueError(f"This operation requires exactly {self.n_inputs} inputs, but {n_inputs} were given.")
+        elif n_inputs < self.min_n_inputs or n_inputs > self.max_n_inputs:
+            raise ValueError(
+                f"Number of inputs to this operation is {n_inputs}, which is outside the required range [{self.min_n_inputs},{self.max_n_inputs}]"
+            )
+        else:
+            self.n_inputs = n_inputs
         dtypes = set(t.dtype for t in self.inputs)
         if len(dtypes) != 1:
             raise ValueError(
@@ -49,10 +64,18 @@ class Operation:
         from tensorguide.framework.tensor import Tensor
 
         inputs = self.inputs_iterator()
-        self.output = Parallel(n_jobs=self.njobs)(delayed(self.forward)(item) for item in inputs)
-        if not isinstance(self.output, Tensor):
-            self.output_tensor_kwargs["value"] = self.output
+        # disabling parallel for quicker debugging
+        # self.output = Parallel(n_jobs=self.njobs)(delayed(self.forward)(item) for item in inputs)
+        output = list(map(self.forward, inputs))
+        if not isinstance(output[0], Tensor):
+            self.output_tensor_kwargs["value"] = output
             self.output = Tensor(**self.output_tensor_kwargs)
+        else:
+            if len(output) != 1:
+                raise ValueError("An operation is returning multiple tensors. This should not happen.")
+            # in case there are sub-operations, we overwrite the pointer of output to the current op
+            self.output = output[0]
+            self.output._op = self
         return self.output
 
     @abc.abstractmethod

@@ -2,14 +2,16 @@ from graphviz import Digraph
 
 
 def trace(tensor):
-    nodes, edges = set(), set()
+    # NOTE: using lists instead of sets to maintain ordering of nodes in visualization
+    #       because inputs to an operation will then always visualize left to right.
+    nodes, edges = list(), list()
 
     def build_upward(t):
         if t not in nodes:
-            nodes.add(t)
+            nodes.append(t)
             if t._op:
                 for parent in t._op.inputs:
-                    edges.add((parent, t))
+                    edges.append((parent, t))
                     build_upward(parent)
 
     build_upward(tensor)
@@ -31,12 +33,8 @@ def draw(tensor, format="svg", rankdir="TB"):
         graph.node(name=n._id, shape="record", label=f"{str(n)}( shape={n.shape._data} )", color=color)
         if n._op:
             graph.node(name=n._op._id, label=n._op.__class__.__name__.lower())
-            for input_tensor in n._op.inputs:
+            for i, input_tensor in enumerate(n._op.inputs):
                 graph.edge(input_tensor._id, n._op._id, color="green" if input_tensor.require_grad else "black")
-                # if input_tensor.require_grad:
-                #     graph.edge(n._op._id, input_tensor._id, color="green")
             graph.edge(n._op._id, n._id, color="green" if n.require_grad else "black")
-            # if n.require_grad:
-            #     graph.edge(n._op._id, n._id, color="green")
 
     return graph

@@ -6,6 +6,8 @@ __all__ = ["log"]
 
 
 class TransformOp(Operation):
+    # A -> B such that A.shape = B.shape
+    n_inputs = 1
     def __init__(self, tensor, **kwargs):
         super().__init__(tensor, **kwargs)
 
