@@ -11,14 +11,18 @@ def trace(tensor):
             nodes.append(t)
             if t._op:
                 for parent in t._op.inputs:
-                    edges.append((parent, t))
-                    build_upward(parent)
+                    # NOTE: these ifs are not necessary if nodes and edges are sets. We can change them
+                    #       to be sets if we figure out how to ensure ordering in the visualization.
+                    if (parent, t) not in edges:
+                        edges.append((parent, t))
+                    if parent not in nodes:
+                        build_upward(parent)
 
     build_upward(tensor)
     return nodes, edges
 
 
-def draw(tensor, format="svg", rankdir="TB"):
+def draw(tensor, targets=None, format="svg", rankdir="TB"):
     """visualize the DAG that flows into `tensor` as an output leaf."""
     nodes, edges = trace(tensor)
     graph = Digraph(format=format, graph_attr={"rankdir": rankdir})
