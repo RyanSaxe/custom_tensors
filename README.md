@@ -1,6 +1,6 @@
-# TensorGuide
+NOTE: never actually got to finishing a real implementation of this beyond the skeletal framework forward pass. I will likely start from scratch in a new repository, but build off of both Triton, Numpy, with lazy execution (since I want to learn triton, and this way it's more usable than this repo in which everything was built on native builtins)
 
-NOTE: never actually got to implementing this. I will likely start from scratch in a new repository, but build off of both Triton and Numpy (since I want to learn triton, and this way it's more usable than this repo in which everything was built on native builtins)
+# TensorGuide
 
 This repository is meant to be a project for the purpose of learning about autodifferentiation. PyTorch and TensorFlow are two very popular, and well optimized using C++ code, autodifferentiation frameworks. The goal of this repository is not to compete with that, but rather be the lightest-weight and easiest-to-read python code that implements autodifferentiation from scratch (no NumPy!).
 
